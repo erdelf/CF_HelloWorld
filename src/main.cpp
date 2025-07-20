@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-constexpr int width = 640;
-constexpr int height = 480;
+constexpr int width = 1920;
+constexpr int height = 1080;
 
 constexpr int widthHalf = width/2;
 constexpr int heightHalf = height / 2;
@@ -19,6 +19,8 @@ struct BasicObject
 
     CF_V2 position;
 	CF_V2 positionDraw;
+
+    bool movingOutOfWall = false;
 
 	void set_position(const CF_V2& new_pos)
 	{
@@ -50,11 +52,42 @@ struct BasicObject
         const CF_V2 pos = position + velocity * CF_DELTA_TIME_FIXED;
         set_position(pos);
 
+        if (movingOutOfWall)
+        {
+            bool done = false;
+
+            if (pos.x < -widthHalf && velocity.x < 0)
+                velocity.x = abs(velocity.x);
+            else if (pos.x > widthHalf && velocity.x > 0)
+                velocity.x = abs(velocity.x) * -1;
+            else
+                done = true;
+
+            if (pos.y < -heightHalf && velocity.y < 0)
+				velocity.y = abs(velocity.y);
+			else if (pos.y > heightHalf && velocity.y > 0)
+				velocity.y = abs(velocity.y) * -1;
+            else if (done)
+            {
+                movingOutOfWall = false;
+                return;
+			}
+            return;
+        }
+
+
         // Bounce off walls
         if (pos.x < -widthHalf || pos.x > widthHalf)
-	        velocity.x = -velocity.x;
+        {
+            velocity.x = -velocity.x;
+            movingOutOfWall = true;
+        }
+
         if (pos.y < -heightHalf || pos.y > heightHalf)
-	        velocity.y = -velocity.y;
+        {
+            velocity.y = -velocity.y;
+            movingOutOfWall = true;
+        }
 	}
 
 	virtual void CollisionTestWith(BasicObject* other)
@@ -98,7 +131,6 @@ struct BasicObject
 	        printf("circle to circle collision detected\n");
 
         if (cf_collided(collisionShape, transform, collisionShapeType, other->collisionShape, transformOther, other->collisionShapeType))
-	    {
             printf("collided\n");
 		*/
     }
@@ -138,7 +170,7 @@ struct BouncingCircle final : BasicObject
 
         circles = {};
 
-        const int circleCount = rand() % 5 + 1;
+        const int circleCount = rand() % 2 + 1;
 
         float highestRadius = 0.f;
 
@@ -148,7 +180,7 @@ struct BouncingCircle final : BasicObject
             circle.radius = 1.f + static_cast<float>(c) * 10.f;
             circle.thickness = 5;
 
-            highestRadius = circle.radius;
+            highestRadius = circle.radius+10;
 
 
             const float h = static_cast<float>(rand()) / RAND_MAX; // Hue: [0, 1]
@@ -160,10 +192,10 @@ struct BouncingCircle final : BasicObject
             cf_array_push(circles, circle);
         }
         position = V2(rand() % width - widthHalf, rand() % height - heightHalf);
-        velocity = V2(rand() % (width / 3) * (rand() % 2 == 1 ? 1 : -1), rand() % (height / 3) * (rand() % 2 == 1 ? 1 : -1));
+        velocity = V2(rand() % (width / 2) * (rand() % 2 == 1 ? 1 : -1), rand() % (height / 2) * (rand() % 2 == 1 ? 1 : -1));
 
         CF_Circle* circleShape = new CF_Circle{position, highestRadius};
-        printf("radius: %f\n", highestRadius);
+        
         collisionShape = static_cast<void*>(circleShape);
 	}
 
@@ -196,7 +228,7 @@ static void init(void* udata)
 
     std::vector<BasicObject*> objects = {};
 
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 1000; ++i)
     {
         BouncingCircle* bCircle = new BouncingCircle();
         objects.push_back(bCircle);
