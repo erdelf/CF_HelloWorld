@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <ctime>
 #include <string>
+#include <vector>
 
 constexpr int width = 640;
 constexpr int height = 480;
@@ -10,37 +11,82 @@ constexpr int height = 480;
 constexpr int widthHalf = width/2;
 constexpr int heightHalf = height / 2;
 
+struct BasicObject
+{
+	virtual ~BasicObject() = default;
+	CF_ShapeType shapeType = CF_SHAPE_TYPE_NONE;
+
+    CF_V2 position;
+	CF_V2 positionDraw;
+
+	void set_position(const CF_V2& new_pos)
+	{
+		this->position = new_pos;
+		this->positionDraw = new_pos;
+	}
+
+
+	CF_V2 velocity;
+
+    void Draw()
+    {
+        cf_draw_push();
+        cf_draw_translate_v2(positionDraw);
+		DrawInt();
+		cf_draw_pop();
+    }
+
+    virtual void DrawInt()
+	{}
+
+	virtual void update()
+	{
+        positionDraw = positionDraw + velocity * CF_DELTA_TIME;
+	}
+
+	virtual void fixed_update()
+	{
+        CF_V2 pos = position + velocity * CF_DELTA_TIME_FIXED;
+
+        // Bounce off walls
+        if (pos.x < -widthHalf || pos.x > widthHalf)
+        {
+            velocity.x = -velocity.x;
+            pos.x = cf_clamp(pos.x, -widthHalf, widthHalf);
+        }
+        if (pos.y < -heightHalf || pos.y > heightHalf)
+        {
+            velocity.y = -velocity.y;
+            pos.y = cf_clamp(pos.y, -heightHalf, heightHalf);
+        }
+
+        set_position(pos);
+	}
+};
+
+
 struct Circle
 {
     float radius, thickness;
 	CF_Color color = cf_color_white();
+
+    void Draw() const
+    {
+        cf_draw_push_color(color);
+        cf_draw_circle2(V2(0,0), radius, thickness);
+        cf_draw_pop_color();
+	}
 };
 
-struct BouncingCircle
+struct BouncingCircle final : BasicObject
 {
     dyna Circle* circles;
-    CF_V2 position;
-    CF_V2 positionDraw;
-    CF_V2 velocity;
-};
 
-struct Game
-{
-    dyna BouncingCircle* circles;
-};
+	BouncingCircle()
+	{
+		shapeType = CF_SHAPE_TYPE_CIRCLE;
 
-static void init(void* udata)
-{
-    const Game* game = (Game*)udata;
-
-
-
-    dyna BouncingCircle* circles = game->circles;
-    cf_array_clear(circles);
-
-    for (int i = 0; i < 10; ++i)
-    {
-        BouncingCircle bCircle = {};
+        circles = {};
 
         const int circleCount = rand() % 5;
         for (int c = 0; c < circleCount; c++)
@@ -51,45 +97,61 @@ static void init(void* udata)
 
 
             const float h = static_cast<float>(rand()) / RAND_MAX; // Hue: [0, 1]
-            const float s = 0.5f + static_cast<float>(rand()) / (1/.5f * RAND_MAX); // Saturation: [0.5, 1]
-            const float v = 0.7f + static_cast<float>(rand()) / (1/.3f * RAND_MAX); // Value: [0.7, 1]
+            const float s = 0.5f + static_cast<float>(rand()) / (1 / .5f * RAND_MAX); // Saturation: [0.5, 1]
+            const float v = 0.7f + static_cast<float>(rand()) / (1 / .3f * RAND_MAX); // Value: [0.7, 1]
 
             circle.color = cf_hsv_to_rgb(CF_Color(h, s, v, 1.));
 
-            cf_array_push(bCircle.circles, circle);
+            cf_array_push(circles, circle);
         }
-		bCircle.position = V2(rand() % width - widthHalf, rand() % height - heightHalf);
-		bCircle.velocity = V2(rand() % (width/3) * (rand() % 2 == 1 ? 1 : -1), rand() % (height / 3) * (rand() % 2 == 1 ? 1 : -1));
-
-        cf_array_push(game->circles, bCircle);
+        position = V2(rand() % width - widthHalf, rand() % height - heightHalf);
+        velocity = V2(rand() % (width / 3) * (rand() % 2 == 1 ? 1 : -1), rand() % (height / 3) * (rand() % 2 == 1 ? 1 : -1));
 	}
+
+	~BouncingCircle() override
+	{
+        cf_array_free(circles);
+		circles = nullptr;
+	}
+
+    void DrawInt() override
+    {
+        for (int c = 0; c < cf_array_count(circles); ++c)
+	        (circles + c)->Draw();
+    }
+};
+
+struct Game
+{
+	~Game()
+	{
+        objects.clear();
+    }
+
+	std::vector<BasicObject*> objects;
+};
+
+static void init(void* udata)
+{
+	Game* game = (Game*)udata;
+
+    std::vector<BasicObject*> objects = {};
+
+    for (int i = 0; i < 10; ++i)
+    {
+        BouncingCircle* bCircle = new BouncingCircle();
+        objects.push_back(bCircle);
+	}
+
+	game->objects = objects;
 }
 
 static void fixed_update(void* udata)
 {
     const Game* game = (Game*) udata;
 
-	dyna BouncingCircle* circles = game->circles;
-
-    for (int i = 0; i < cf_array_count(circles); ++i)
-    {
-        BouncingCircle* circle = circles + i;
-		circle->position += circle->velocity * CF_DELTA_TIME_FIXED;
-
-        // Bounce off walls
-        if (circle->position.x < -widthHalf || circle->position.x > widthHalf)
-        {
-            circle->velocity.x = -circle->velocity.x;
-            circle->position.x = cf_clamp(circle->position.x, -widthHalf, widthHalf);
-        }
-        if (circle->position.y < -heightHalf || circle->position.y > heightHalf)
-        {
-            circle->velocity.y = -circle->velocity.y;
-            circle->position.y = cf_clamp(circle->position.y, -heightHalf, heightHalf);
-		}
-
-        circle->positionDraw = circle->position;
-    }
+    for (const std::vector<BasicObject*> objects = game->objects; BasicObject* obj : objects)
+	    obj->fixed_update();
 }
 
 
@@ -97,24 +159,13 @@ static void update(void* udata)
 {
     const Game* game = (Game*)udata;
 
-    dyna BouncingCircle* circles = game->circles;
+    const std::vector<BasicObject*> objects = game->objects;
 
-    for (int i = 0; i < cf_array_count(circles); ++i)
-    {
-		BouncingCircle* bCircle = circles + i;
+    for (BasicObject* obj : objects)
+        obj->update();
 
-        cf_draw_push();
-		bCircle->positionDraw = bCircle->positionDraw + bCircle->velocity * CF_DELTA_TIME;
-        cf_draw_translate_v2(bCircle->positionDraw);
-        for (int c = 0; c < cf_array_count(bCircle->circles); ++c)
-        {
-            const Circle* circle = bCircle->circles + c;
-            cf_draw_push_color(circle->color);
-            cf_draw_circle2(V2(0, 0), circle->radius, circle->thickness);
-            cf_draw_pop_color();
-        }
-        cf_draw_pop();
-    }
+    for (BasicObject* obj : objects)
+        obj->Draw();
 }
 
 int main(int argc, char* argv[])
@@ -128,7 +179,7 @@ int main(int argc, char* argv[])
 
     srand((unsigned) time(nullptr));
 
-	Game game = {};
+	Game game = *(new Game());
 
     cf_set_update_udata(&game);
 
@@ -136,7 +187,6 @@ int main(int argc, char* argv[])
 
     while (cf_app_is_running())
     {
-
         cf_app_update(fixed_update);
 
         update(&game);
