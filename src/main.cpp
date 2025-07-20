@@ -1,4 +1,5 @@
 #include <cute.h>
+#include <cmath>
 #include <cstdio>
 
 struct Circle
@@ -22,8 +23,11 @@ static void init(void* udata)
     for (int i = 0; i < 10; ++i)
     {
         Circle circle ;
-        circle.radius = 20 + i * 10;
-        circle.thickness = 5;
+        circle.radius = 50 + i * 20;
+        circle.thickness = 10;
+
+		circle.color = cf_hsv_to_rgb(CF_Color(.1f * (float)i, .1f * (float)i, .1f * (float)i, 1.0f));
+
         cf_array_push(game->circles, circle);
 	}
 }
@@ -37,7 +41,7 @@ static void fixedUpdate(void* udata)
     for (int i = 0; i < cf_array_count(circles); ++i)
     {
         Circle* circle = circles + i;
-		circle->thickness += cf_sin_in_out(CF_TICKS * 2.0f + i) * 2 - 1;
+		circle->thickness += std::sin(CF_TICKS * 10.0f + i) * 2;
     }
     /*
     update_blocks(game);
@@ -74,7 +78,9 @@ int main(int argc, char* argv[])
         return -1;
 
     cf_set_target_framerate(60);
-    cf_set_fixed_timestep(30);
+    cf_set_fixed_timestep(10);
+    cf_clear_color(0.1f, 0.1f, 0.1f, 1.f);
+
 
 	Game game = {};
 
@@ -84,6 +90,7 @@ int main(int argc, char* argv[])
 
     while (cf_app_is_running())
     {
+
         cf_app_update(fixedUpdate);
 
         update(&game);
