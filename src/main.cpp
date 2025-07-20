@@ -52,12 +52,10 @@ struct BasicObject
         if (pos.x < -widthHalf || pos.x > widthHalf)
         {
             velocity.x = -velocity.x;
-            pos.x = cf_clamp(pos.x, -widthHalf, widthHalf);
         }
         if (pos.y < -heightHalf || pos.y > heightHalf)
         {
             velocity.y = -velocity.y;
-            pos.y = cf_clamp(pos.y, -heightHalf, heightHalf);
         }
 
         set_position(pos);
