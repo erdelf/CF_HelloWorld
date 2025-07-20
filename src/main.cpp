@@ -14,7 +14,8 @@ constexpr int heightHalf = height / 2;
 struct BasicObject
 {
 	virtual ~BasicObject() = default;
-	CF_ShapeType shapeType = CF_SHAPE_TYPE_NONE;
+	CF_ShapeType collisionShapeType = CF_SHAPE_TYPE_NONE;
+	void* collisionShape = nullptr;
 
     CF_V2 position;
 	CF_V2 positionDraw;
@@ -46,20 +47,57 @@ struct BasicObject
 
 	virtual void fixed_update()
 	{
-        CF_V2 pos = position + velocity * CF_DELTA_TIME_FIXED;
+        const CF_V2 pos = position + velocity * CF_DELTA_TIME_FIXED;
+        set_position(pos);
 
         // Bounce off walls
         if (pos.x < -widthHalf || pos.x > widthHalf)
-        {
-            velocity.x = -velocity.x;
-        }
+	        velocity.x = -velocity.x;
         if (pos.y < -heightHalf || pos.y > heightHalf)
-        {
-            velocity.y = -velocity.y;
-        }
-
-        set_position(pos);
+	        velocity.y = -velocity.y;
 	}
+
+	virtual void CollisionTestWith(BasicObject* other)
+    {
+        if (other == nullptr || other == this || collisionShapeType == CF_SHAPE_TYPE_NONE || other->collisionShapeType == CF_SHAPE_TYPE_NONE)
+			return;
+
+
+        /**
+		 *  manual works but currently hardcoded for circles
+        if (cf_len((position - other->position)) < (((CF_Circle*)(collisionShape))->r + ((CF_Circle*)(other->collisionShape))->r))
+        {
+            printf("collision detected\n");
+		}
+		*/
+        
+        /**
+			Seemingly none of the cf collision functions work, so this is commented out for now.
+
+        CF_Transform* transform = new CF_Transform();
+        transform->r = cf_sincos();
+		transform->p = position;
+
+        CF_Transform* transformOther = new CF_Transform();
+        transformOther->r = cf_sincos();
+        transformOther->p = other->position;
+
+        if (cf_circle_to_circle(*((CF_Circle*)(collisionShape)), *((CF_Circle*)(other->collisionShape))))
+	        printf("circle to circle collision detected\n");
+
+        if (cf_collided(collisionShape, transform, collisionShapeType, other->collisionShape, transformOther, other->collisionShapeType))
+	    {
+            printf("collided\n");
+
+			const CF_V2 vel_new = position - positionDraw;
+
+			velocity = vel_new * cf_len(velocity);
+			other->velocity = -vel_new * cf_len(other->velocity);
+
+            fixed_update();
+		}
+		*/
+    }
 };
 
 
@@ -82,16 +120,21 @@ struct BouncingCircle final : BasicObject
 
 	BouncingCircle()
 	{
-		shapeType = CF_SHAPE_TYPE_CIRCLE;
+		collisionShapeType = CF_SHAPE_TYPE_CIRCLE;
 
         circles = {};
 
-        const int circleCount = rand() % 5;
+        const int circleCount = rand() % 5 + 1;
+
+        float highestRadius = 0.f;
+
         for (int c = 0; c < circleCount; c++)
         {
             Circle circle;
             circle.radius = 1.f + static_cast<float>(c) * 10.f;
             circle.thickness = 5;
+
+            highestRadius = circle.radius;
 
 
             const float h = static_cast<float>(rand()) / RAND_MAX; // Hue: [0, 1]
@@ -104,6 +147,10 @@ struct BouncingCircle final : BasicObject
         }
         position = V2(rand() % width - widthHalf, rand() % height - heightHalf);
         velocity = V2(rand() % (width / 3) * (rand() % 2 == 1 ? 1 : -1), rand() % (height / 3) * (rand() % 2 == 1 ? 1 : -1));
+
+        CF_Circle* circleShape = new CF_Circle{position, highestRadius};
+        printf("radius: %f\n", highestRadius);
+        collisionShape = static_cast<void*>(circleShape);
 	}
 
 	~BouncingCircle() override
@@ -135,7 +182,7 @@ static void init(void* udata)
 
     std::vector<BasicObject*> objects = {};
 
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 5; ++i)
     {
         BouncingCircle* bCircle = new BouncingCircle();
         objects.push_back(bCircle);
@@ -148,8 +195,14 @@ static void fixed_update(void* udata)
 {
     const Game* game = (Game*) udata;
 
-    for (const std::vector<BasicObject*> objects = game->objects; BasicObject* obj : objects)
+    const std::vector<BasicObject*> objects = game->objects;
+
+    for (BasicObject* obj : objects)
 	    obj->fixed_update();
+
+    for (BasicObject* objA : objects)
+        for (BasicObject* objB : objects)
+            objA->CollisionTestWith(objB);
 }
 
 
