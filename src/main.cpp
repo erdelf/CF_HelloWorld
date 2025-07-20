@@ -62,6 +62,18 @@ struct BasicObject
         if (other == nullptr || other == this || collisionShapeType == CF_SHAPE_TYPE_NONE || other->collisionShapeType == CF_SHAPE_TYPE_NONE)
 			return;
 
+        if (CollisionTestWithInt(other))
+        {
+            //printf("collision\n");
+
+            CF_V2 vel_new = position - other->position;
+			vel_new = vel_new / cf_len(vel_new);
+
+            velocity = vel_new * cf_len(velocity);
+            other->velocity = -vel_new * cf_len(other->velocity);
+        }
+
+
 
         /**
 		 *  manual works but currently hardcoded for circles
@@ -88,15 +100,17 @@ struct BasicObject
         if (cf_collided(collisionShape, transform, collisionShapeType, other->collisionShape, transformOther, other->collisionShapeType))
 	    {
             printf("collided\n");
-
-			const CF_V2 vel_new = position - positionDraw;
-
-			velocity = vel_new * cf_len(velocity);
-			other->velocity = -vel_new * cf_len(other->velocity);
-
-            fixed_update();
-		}
 		*/
+    }
+
+    virtual bool CollisionTestWithInt(BasicObject* other)
+    {
+		//Hrdcoded for circles atm. Best case would be to check all different collision shapes
+	    const float combinedShapeDistance = ((CF_Circle*)(collisionShape))->r + ((CF_Circle*)(other->collisionShape))->r;
+	    const float distance = cf_len_sq((position - other->position));
+        if (distance < combinedShapeDistance * combinedShapeDistance)
+	        return true;
+	    return false;
     }
 };
 
