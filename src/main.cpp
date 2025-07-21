@@ -448,8 +448,6 @@ int main(int argc, char* argv[])
 
     static bool debugMenu = true;
 
-    cf_pause_for(10);
-
     while (cf_app_is_running())
     {
         cf_app_update(hello_world::fixedUpdate);
