@@ -33,6 +33,7 @@ namespace HelloWorld
 
 
         CF_V2 velocity;
+        bool velocityAdjusted;
 
         void Draw()
         {
@@ -53,6 +54,8 @@ namespace HelloWorld
 
         virtual void fixed_update()
         {
+            velocityAdjusted = false;
+
             const CF_V2 pos = position + velocity * CF_DELTA_TIME_FIXED;
             set_position(pos);
 
@@ -96,18 +99,21 @@ namespace HelloWorld
 
         virtual void CollisionTestWith(BasicObject* other)
         {
-            if (other == nullptr || other == this || collisionShapeType == CF_SHAPE_TYPE_NONE || other->collisionShapeType == CF_SHAPE_TYPE_NONE)
+            if (other == nullptr || other == this || collisionShapeType == CF_SHAPE_TYPE_NONE || other->collisionShapeType == CF_SHAPE_TYPE_NONE || (velocityAdjusted && other->velocityAdjusted))
                 return;
 
             if (CollisionTestWithInt(other))
             {
-                //printf("collision\n");
+                CF_V2 velNew = position - other->position;
+                velNew = velNew / cf_len(velNew);
 
-                CF_V2 vel_new = position - other->position;
-                vel_new = vel_new / cf_len(vel_new);
+                if (!velocityAdjusted)
+					velocity = velNew * cf_len(velocity);
+                if (!other->velocityAdjusted)
+					other->velocity = -velNew * cf_len(other->velocity);
 
-                velocity = vel_new * cf_len(velocity);
-                other->velocity = -vel_new * cf_len(other->velocity);
+				velocityAdjusted = true;
+                other->velocityAdjusted = true;
             }
 
 
@@ -241,8 +247,23 @@ namespace HelloWorld
         const Game* game = (Game*)udata;
         const auto& objects = game->objects;
 
+        const size_t numObjects = objects.size();
+        const unsigned numThreads = std::thread::hardware_concurrency();
+
+        std::vector<std::thread> threads;
+
+
         for (const auto& obj : objects)
             obj->fixed_update();
+        auto collision_worker = [&](const size_t start, const size_t end) {
+            for (size_t i = start; i < end; ++i) {
+                for (size_t j = 0; j < numObjects; ++j) {
+                    if (i != j) {
+                        objects[i]->collisionTestWith(objects[j].get());
+                    }
+                }
+            }
+        };
 
         for (const auto& objA : objects)
             for (const auto& objB : objects)
