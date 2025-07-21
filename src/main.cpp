@@ -7,6 +7,9 @@
 
 #include "cimgui.h"
 
+
+#include <array>
+
 namespace hello_world
 {
     constexpr int kWidth = 1920;
@@ -124,6 +127,104 @@ namespace hello_world
         }
     };
 
+    struct Quadtree {
+        static constexpr int kMaxObjects = 8;
+        static constexpr int kMaxLevels = 12;
+
+        struct AABB {
+            float x, y, hw, hh;
+
+        	bool contains(const CF_V2& p, float r) const {
+                return p.x - r >= x - hw && p.x + r <= x + hw &&
+                    p.y - r >= y - hh && p.y + r <= y + hh;
+            }
+
+        	bool intersects(const AABB& other) const {
+                return !(x + hw < other.x - other.hw || x - hw > other.x + other.hw ||
+                    y + hh < other.y - other.hh || y - hh > other.y + other.hh);
+            }
+        };
+
+        int level;
+        AABB bounds;
+        std::vector<BasicObject*> objects;
+        std::array<std::unique_ptr<Quadtree>, 4> nodes;
+
+        Quadtree(const Quadtree&) = delete;
+        Quadtree& operator=(const Quadtree&) = delete;
+
+        Quadtree(const int lvl, const AABB& b) : level(lvl), bounds(b) {}
+
+        void clear() {
+            objects.clear();
+            for (auto& n : nodes) if (n) n->clear();
+            for (auto& n : nodes) if (n) n.reset();
+        }
+
+        void split() {
+            const float x = bounds.x, y = bounds.y, hw = bounds.hw / 2, hh = bounds.hh / 2;
+            nodes[0] = std::make_unique<Quadtree>(level + 1, AABB{ .x= x + hw, .y= y - hh, .hw= hw, .hh= hh});
+            nodes[1] = std::make_unique<Quadtree>(level + 1, AABB{ .x= x - hw, .y= y - hh, .hw= hw, .hh= hh});
+            nodes[2] = std::make_unique<Quadtree>(level + 1, AABB{ .x= x - hw, .y= y + hh, .hw= hw, .hh= hh});
+            nodes[3] = std::make_unique<Quadtree>(level + 1, AABB{ .x= x + hw, .y= y + hh, .hw= hw, .hh= hh});
+        }
+
+        int getIndex(const CF_V2& pos, const float r) const {
+            const bool top = pos.y - r < bounds.y && pos.y + r < bounds.y;
+            const bool bottom = pos.y - r > bounds.y;
+            const bool left = pos.x - r < bounds.x && pos.x + r < bounds.x;
+            const bool right = pos.x - r > bounds.x;
+            if (top) {
+                if (right) return 0;
+                if (left) return 1;
+            }
+            else if (bottom) {
+                if (left) return 2;
+                if (right) return 3;
+            }
+            return -1;
+        }
+
+        void insert(BasicObject* obj) {
+            const float r = ((CF_Circle*)obj->collisionShape)->r;
+            if (nodes[0]) {
+	            if (const int idx = getIndex(obj->position, r); 
+                    idx != -1) {
+                    nodes[idx]->insert(obj);
+                    return;
+                }
+            }
+            objects.push_back(obj);
+            if (objects.size() > kMaxObjects && level < kMaxLevels) {
+                if (!nodes[0]) 
+                    split();
+                auto it = objects.begin();
+                while (it != objects.end()) {
+                    const float r2 = ((CF_Circle*)(*it)->collisionShape)->r;
+                    if (const int idx = getIndex((*it)->position, r2); 
+                        idx != -1) {
+                        nodes[idx]->insert(*it);
+                        it = objects.erase(it);
+                    }
+                    else {
+                        ++it;
+                    }
+                }
+            }
+        }
+
+        void retrieve(const BasicObject* obj, std::vector<BasicObject*>& out) const {
+            const float r = ((CF_Circle*)obj->collisionShape)->r;
+            const int idx = getIndex(obj->position, r);
+
+            if (nodes[0] && idx != -1) {
+                nodes[idx]->retrieve(obj, out);
+            }
+            out.insert(out.end(), objects.begin(), objects.end());
+        }
+    };
+
+
     struct Circle
     {
         float radius, thickness;
@@ -148,6 +249,8 @@ namespace hello_world
             const int circleCount = rand() % 1 + 1;
             float highestRadius = 0.f;
 
+            position = V2(rand() % kWidth - kWidthHalf, rand() % kHeight - kHeightHalf);
+
             for (int c = 0; c < circleCount; c++)
             {
                 Circle circle;
@@ -155,14 +258,19 @@ namespace hello_world
                 circle.thickness = 5;
                 highestRadius = circle.radius + 10;
 
+                /*
                 const float h = static_cast<float>(rand()) / RAND_MAX; // Hue: [0, 1]
                 const float s = 0.5f + static_cast<float>(rand()) / (1 / .5f * RAND_MAX); // Saturation: [0.5, 1]
                 const float v = 0.7f + static_cast<float>(rand()) / (1 / .3f * RAND_MAX); // Value: [0.7, 1]
+				*/
+                const float h = (position.x + kWidthHalf) / kWidth; // Hue: [0, 1]
+                const float s = 0.5f + (position.y + kHeightHalf) / (1 / .5f * kHeight); // Saturation: [0.5, 1]
+                const float v = 0.7f + static_cast<float>(rand()) / (1 / .3f * RAND_MAX); // Value: [0.7, 1]
+
 
                 circle.color = cf_hsv_to_rgb(CF_Color(h, s, v, 1.));
                 cf_array_push(circles, circle);
             }
-            position = V2(rand() % kWidth - kWidthHalf, rand() % kHeight - kHeightHalf);
             velocity = V2(rand() % (kWidth / 2) * (rand() % 2 == 1 ? 1 : -1), rand() % (kHeight / 2) * (rand() % 2 == 1 ? 1 : -1));
             CF_Circle* cf_circle = new CF_Circle { position, highestRadius };
             collisionShape = cf_circle;
@@ -195,47 +303,35 @@ namespace hello_world
     {
         Game* game = (Game*)udata;
         std::vector<std::unique_ptr<BasicObject>> objects;
-        for (int i = 0; i < 3000; ++i)
+        for (int i = 0; i < 5000; ++i)
             objects.push_back(std::make_unique<BouncingCircle>());
         game->objects = std::move(objects);
     }
+
+    constexpr Quadtree::AABB worldAABB{ .x = 0, .y = 0, .hw = kWidthHalf, .hh = kHeightHalf };
 
     static void fixedUpdate(void* udata)
     {
         const Game* game = (Game*)udata;
         const auto& objects = game->objects;
 
-        const size_t numObjects = objects.size();
-        const unsigned numThreads = std::thread::hardware_concurrency();
-
-        std::vector<std::thread> threads;
-
-
         for (const auto& obj : objects)
             obj->fixedUpdate();
 
-        
-        auto collision_worker = [&](const size_t start, const size_t end) {
-            for (size_t i = start; i < end; ++i) {
-                for (size_t j = 0; j < numObjects; ++j) {
-                    if (i != j) {
-                        objects[i]->collisionTestWith(objects[j].get());
-                    }
-                }
-            }
-        };
+        Quadtree quadtree(0, worldAABB);
 
-        const size_t chunk = (numObjects + numThreads - 1) / numThreads;
-        for (unsigned t = 0; t < numThreads; ++t) {
-            size_t start = t * chunk;
-            size_t end = std::min(start + chunk, numObjects);
-            if (start < end) {
-                threads.emplace_back(collision_worker, start, end);
-            }
-        }
+        for (const auto& obj : objects)
+            quadtree.insert(obj.get());
 
-        for (auto& th : threads) {
-            th.join();
+        std::vector<BasicObject*> candidates;
+
+        for (const auto& obj : objects) {
+            candidates.clear();
+            quadtree.retrieve(obj.get(), candidates);
+            for (auto* other : candidates) {
+                if (obj.get() != other)
+                    obj->collisionTestWith(other);
+            }
         }
     }
 
@@ -271,6 +367,9 @@ int main(int argc, char* argv[])
     cf_app_init_imgui();
 
     static bool debugMenu = true;
+
+    cf_pause_for(10);
+
     while (cf_app_is_running())
     {
         cf_app_update(hello_world::fixedUpdate);
