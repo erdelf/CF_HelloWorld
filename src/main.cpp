@@ -5,6 +5,8 @@
 #include <vector>
 #include <thread>
 
+#include "cimgui.h"
+
 namespace hello_world
 {
     constexpr int kWidth = 1920;
@@ -143,7 +145,7 @@ namespace hello_world
         {
             collisionShapeType = CF_SHAPE_TYPE_CIRCLE;
             circles = {};
-            const int circleCount = rand() % 2 + 1;
+            const int circleCount = rand() % 1 + 1;
             float highestRadius = 0.f;
 
             for (int c = 0; c < circleCount; c++)
@@ -193,7 +195,7 @@ namespace hello_world
     {
         Game* game = (Game*)udata;
         std::vector<std::unique_ptr<BasicObject>> objects;
-        for (int i = 0; i < 1000; ++i)
+        for (int i = 0; i < 3000; ++i)
             objects.push_back(std::make_unique<BouncingCircle>());
         game->objects = std::move(objects);
     }
@@ -243,10 +245,10 @@ namespace hello_world
         const auto& objects = game->objects;
 
         for (const auto& obj : objects)
-            obj->update();
-
-        for (const auto& obj : objects)
-            obj->draw();
+        {
+			obj->update();
+	        obj->draw();
+        }
     }
 }
 
@@ -254,7 +256,7 @@ int main(int argc, char* argv[])
 {
     if (const CF_Result result = cf_make_app("MainWindow", 0, 0, 0, hello_world::kWidth, hello_world::kHeight, CF_APP_OPTIONS_WINDOW_POS_CENTERED_BIT, argv[0]); cf_is_error(result))
         return -1;
-
+    
     cf_set_target_framerate(60);
     cf_set_fixed_timestep(10);
     cf_clear_color(0.1f, 0.1f, 0.1f, 1.f);
@@ -266,9 +268,19 @@ int main(int argc, char* argv[])
     cf_set_update_udata(&game);
     init(&game);
 
+    cf_app_init_imgui();
+
+    static bool debugMenu = true;
     while (cf_app_is_running())
     {
         cf_app_update(hello_world::fixedUpdate);
+
+        if (debugMenu)
+        {
+            igBegin("Debug", &debugMenu, 0);
+            igText("FPS: %f", cf_app_get_framerate());
+            igEnd();
+        }
 
         update(&game);
 
